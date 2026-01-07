@@ -3,6 +3,8 @@ import { ref, onMounted, computed } from 'vue'
 
 const bags = ref([])
 const votes = ref([])
+const users = ref({})
+const expandedBags = ref(new Set())
 const loading = ref(true)
 const error = ref(null)
 
@@ -24,6 +26,57 @@ const sortedBags = computed(() => {
     return getVoteCount(b._id) - getVoteCount(a._id)
   })
 })
+
+const isExpanded = (bagId) => {
+  return expandedBags.value.has(bagId)
+}
+
+const fetchUserDetails = async (userId) => {
+  if (!userId || users.value[userId]) return
+  try {
+    const res = await fetch(`https://laysflavorapi.onrender.com/api/user/${userId}`)
+    const data = await res.json()
+    if (data.status === 'success') {
+      users.value[userId] = data.data.user
+    }
+  } catch (err) {
+    console.error('Failed to fetch user', err)
+  }
+}
+
+const toggleDetails = async (bag) => {
+  if (expandedBags.value.has(bag._id)) {
+    expandedBags.value.delete(bag._id)
+  } else {
+    expandedBags.value.add(bag._id)
+    console.log('Bag data:', bag)
+    const userId = bag.userId || bag.createdBy || bag.creator || bag.user
+    if (userId) {
+      await fetchUserDetails(userId)
+    }
+  }
+}
+
+const deleteBag = async (bagId) => {
+  if (!confirm('Are you sure you want to remove this submission? This action cannot be undone.')) {
+    return
+  }
+  
+  try {
+    const res = await fetch(`https://laysflavorapi.onrender.com/api/bag/${bagId}`, {
+      method: 'DELETE'
+    })
+    
+    if (res.ok) {
+      bags.value = bags.value.filter(b => b._id !== bagId)
+      expandedBags.value.delete(bagId)
+    } else {
+      alert('Failed to delete bag')
+    }
+  } catch (err) {
+    alert('Error deleting bag: ' + err.message)
+  }
+}
 
 onMounted(async () => {
   try {
@@ -60,19 +113,45 @@ onMounted(async () => {
     <div v-else-if="error" class="error">{{ error }}</div>
     
     <div v-else class="bags-grid">
-      <div v-for="bag in sortedBags" :key="bag._id" class="bag-card">
-        <img :src="bag.bagImage" :alt="bag.name" class="bag-image" />
-        
-        <div class="colour-square" :style="{ backgroundColor: bag.colour }"></div>
-        
-        <div class="bag-info">
-          <h3>{{ bag.name }}</h3>
-          <p>{{ bag.flavor }}</p>
+      <div v-for="bag in sortedBags" :key="bag._id" class="bag-card" :class="{ expanded: isExpanded(bag._id) }">
+        <div class="card-main">
+          <div class="vote-badge">
+            <span class="vote-icon">❤️</span>
+            <span class="vote-count">{{ getVoteCount(bag._id) }}</span>
+          </div>
+          
+          <img :src="bag.bagImage" :alt="bag.name" class="bag-image" />
+          
+          <div class="colour-square" :style="{ backgroundColor: bag.colour }"></div>
+          
+          <div class="bag-info">
+            <h3>{{ bag.name }}</h3>
+            <p>{{ bag.flavor }}</p>
+          </div>
+          
+          <button class="details-btn" @click="toggleDetails(bag)">
+            {{ isExpanded(bag._id) ? 'Hide' : 'Details' }}
+          </button>
+          
+          <button class="remove-btn" @click="deleteBag(bag._id)">
+            Remove Inappropriate Submission
+          </button>
         </div>
         
-        <div class="vote-badge">
-          <span class="vote-icon">❤️</span>
-          <span class="vote-count">{{ getVoteCount(bag._id) }}</span>
+        <div v-if="isExpanded(bag._id)" class="card-details">
+          <h4>Submission Details</h4>
+          <div v-if="(bag.userId || bag.createdBy || bag.creator || bag.user) && users[bag.userId || bag.createdBy || bag.creator || bag.user]" class="user-info">
+            <div class="info-row">
+              <span class="label">Username:</span>
+              <span class="value">{{ users[bag.userId || bag.createdBy || bag.creator || bag.user].username }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Email:</span>
+              <span class="value">{{ users[bag.userId || bag.createdBy || bag.creator || bag.user].email }}</span>
+            </div>
+          </div>
+          <div v-else-if="bag.userId || bag.createdBy || bag.creator || bag.user" class="loading-user">Loading user details...</div>
+          <div v-else class="no-user">No creator information available</div>
         </div>
       </div>
     </div>
@@ -113,8 +192,8 @@ h1 {
 
 .bag-card {
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0;
   padding: 1.5rem;
   border: none;
   border-radius: 14px;
@@ -122,6 +201,17 @@ h1 {
   width: 100%;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.bag-card.expanded {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.card-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
 }
 
 .bag-card:hover {
@@ -189,6 +279,86 @@ h1 {
   color: var(--text);
   min-width: 20px;
   text-align: center;
+}
+
+.details-btn {
+  padding: 8px 16px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.details-btn:hover {
+  background: #f5f5f5;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.remove-btn {
+  padding: 8px 16px;
+  background: #fff;
+  border: 1px solid #ff4444;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #b00020;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.remove-btn:hover {
+  background: #fff0f0;
+  border-color: #cc0000;
+  color: #cc0000;
+}
+
+.card-details {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.card-details h4 {
+  margin: 0 0 1rem 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.info-row {
+  display: flex;
+  gap: 1rem;
+  font-size: 14px;
+}
+
+.info-row .label {
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 80px;
+}
+
+.info-row .value {
+  color: var(--text);
+}
+
+.loading-user,
+.no-user {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
