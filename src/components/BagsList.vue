@@ -1,22 +1,51 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 
 const bags = ref([])
+const votes = ref([])
 const loading = ref(true)
 const error = ref(null)
 
+const voteCounts = computed(() => {
+  const counts = {}
+  votes.value.forEach(vote => {
+    const bagId = vote.bagId
+    counts[bagId] = (counts[bagId] || 0) + 1
+  })
+  return counts
+})
+
+const getVoteCount = (bagId) => {
+  return voteCounts.value[bagId] || 0
+}
+
+const sortedBags = computed(() => {
+  return [...bags.value].sort((a, b) => {
+    return getVoteCount(b._id) - getVoteCount(a._id)
+  })
+})
+
 onMounted(async () => {
   try {
-    const response = await fetch('https://laysflavorapi.onrender.com/api/bag')
-    const data = await response.json()
+    const [bagsResponse, votesResponse] = await Promise.all([
+      fetch('https://laysflavorapi.onrender.com/api/bag'),
+      fetch('https://laysflavorapi.onrender.com/api/vote')
+    ])
     
-    if (data.status === 'success') {
-      bags.value = data.data.bags
+    const bagsData = await bagsResponse.json()
+    const votesData = await votesResponse.json()
+    
+    if (bagsData.status === 'success') {
+      bags.value = bagsData.data.bags
     } else {
       error.value = 'Failed to load bags'
     }
+    
+    if (votesData.status === 'success') {
+      votes.value = votesData.data.votes || []
+    }
   } catch (err) {
-    error.value = 'Error fetching bags: ' + err.message
+    error.value = 'Error fetching data: ' + err.message
   } finally {
     loading.value = false
   }
@@ -31,7 +60,7 @@ onMounted(async () => {
     <div v-else-if="error" class="error">{{ error }}</div>
     
     <div v-else class="bags-grid">
-      <div v-for="bag in bags" :key="bag._id" class="bag-card">
+      <div v-for="bag in sortedBags" :key="bag._id" class="bag-card">
         <img :src="bag.bagImage" :alt="bag.name" class="bag-image" />
         
         <div class="colour-square" :style="{ backgroundColor: bag.colour }"></div>
@@ -39,6 +68,11 @@ onMounted(async () => {
         <div class="bag-info">
           <h3>{{ bag.name }}</h3>
           <p>{{ bag.flavor }}</p>
+        </div>
+        
+        <div class="vote-badge">
+          <span class="vote-icon">❤️</span>
+          <span class="vote-count">{{ getVoteCount(bag._id) }}</span>
         </div>
       </div>
     </div>
@@ -131,6 +165,30 @@ h1 {
   font-size: 13px;
   color: var(--muted);
   line-height: 1.4;
+}
+
+.vote-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(255, 200, 0, 0.1);
+  border: 1px solid rgba(255, 200, 0, 0.3);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.vote-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.vote-count {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  min-width: 20px;
+  text-align: center;
 }
 
 @media (max-width: 768px) {
