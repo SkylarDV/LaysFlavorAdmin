@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 
+const activeTab = ref('bags')
 const bags = ref([])
 const votes = ref([])
 const users = ref({})
+const allUsers = ref([])
 const expandedBags = ref(new Set())
 const loading = ref(true)
 const error = ref(null)
@@ -78,15 +80,49 @@ const deleteBag = async (bagId) => {
   }
 }
 
+const deleteUser = async (userId) => {
+  if (!confirm('Are you sure you want to ban this user? This will delete their account permanently.')) {
+    return
+  }
+  
+  try {
+    const authData = JSON.parse(localStorage.getItem('laysAdminAuth') || '{}')
+    const headers = {
+      'Content-Type': 'application/json'
+    }
+    if (authData.token) {
+      headers['Authorization'] = `Bearer ${authData.token}`
+    }
+    
+    const res = await fetch(`https://laysflavorapi.onrender.com/api/user/${userId}`, {
+      method: 'DELETE',
+      headers
+    })
+    
+    const data = await res.json().catch(() => null)
+    
+    if (res.ok) {
+      allUsers.value = allUsers.value.filter(u => u._id !== userId)
+    } else {
+      const message = data?.message || data?.error || 'Failed to ban user'
+      alert(message)
+    }
+  } catch (err) {
+    alert('Error banning user: ' + err.message)
+  }
+}
+
 onMounted(async () => {
   try {
-    const [bagsResponse, votesResponse] = await Promise.all([
+    const [bagsResponse, votesResponse, usersResponse] = await Promise.all([
       fetch('https://laysflavorapi.onrender.com/api/bag'),
-      fetch('https://laysflavorapi.onrender.com/api/vote')
+      fetch('https://laysflavorapi.onrender.com/api/vote'),
+      fetch('https://laysflavorapi.onrender.com/api/user')
     ])
     
     const bagsData = await bagsResponse.json()
     const votesData = await votesResponse.json()
+    const usersData = await usersResponse.json()
     
     if (bagsData.status === 'success') {
       bags.value = bagsData.data.bags
@@ -96,6 +132,10 @@ onMounted(async () => {
     
     if (votesData.status === 'success') {
       votes.value = votesData.data.votes || []
+    }
+    
+    if (usersData.status === 'success') {
+      allUsers.value = usersData.data.users || []
     }
   } catch (err) {
     error.value = 'Error fetching data: ' + err.message
@@ -107,12 +147,29 @@ onMounted(async () => {
 
 <template>
   <div class="bags-container">
-    <h1>Lays Flavors</h1>
+    <h1>Lays Admin</h1>
     
-    <div v-if="loading" class="loading">Loading bags...</div>
+    <div class="tabs">
+      <button 
+        class="tab" 
+        :class="{ active: activeTab === 'bags' }" 
+        @click="activeTab = 'bags'"
+      >
+        Bags
+      </button>
+      <button 
+        class="tab" 
+        :class="{ active: activeTab === 'users' }" 
+        @click="activeTab = 'users'"
+      >
+        Users
+      </button>
+    </div>
+    
+    <div v-if="loading" class="loading">Loading...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     
-    <div v-else class="bags-grid">
+    <div v-else-if="activeTab === 'bags'" class="bags-grid">
       <div v-for="bag in sortedBags" :key="bag._id" class="bag-card" :class="{ expanded: isExpanded(bag._id) }">
         <div class="card-main">
           <div class="vote-badge">
@@ -155,6 +212,23 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+    
+    <div v-else-if="activeTab === 'users'" class="users-grid">
+      <div v-for="user in allUsers" :key="user._id" class="user-card">
+        <div class="user-main">
+          <div class="user-info-main">
+            <h3>{{ user.username }}</h3>
+            <p>{{ user.email }}</p>
+          </div>
+          <div class="admin-badge" v-if="user.admin">
+            Admin
+          </div>
+          <button v-else class="ban-btn" @click="deleteUser(user._id)">
+            Ban User
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -165,10 +239,40 @@ onMounted(async () => {
 }
 
 h1 {
-  margin: 0 0 2rem 0;
+  margin: 0 0 1.5rem 0;
   font-size: 22px;
   letter-spacing: -0.3px;
   color: var(--text);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.06);
+}
+
+.tab {
+  padding: 12px 24px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: -2px;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .loading,
@@ -359,6 +463,83 @@ h1 {
   font-size: 13px;
   color: var(--muted);
   font-style: italic;
+}
+
+.users-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.user-card {
+  padding: 1.5rem;
+  border: none;
+  border-radius: 14px;
+  background-color: var(--card);
+  width: 100%;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.user-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.user-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.user-info-main {
+  flex: 1;
+}
+
+.user-info-main h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.user-info-main p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.admin-badge {
+  padding: 6px 12px;
+  background: rgba(255, 200, 0, 0.15);
+  border: 1px solid rgba(255, 200, 0, 0.4);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #997500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ban-btn {
+  padding: 8px 16px;
+  background: #fff;
+  border: 1px solid #ff4444;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #b00020;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.ban-btn:hover {
+  background: #fff0f0;
+  border-color: #cc0000;
+  color: #cc0000;
 }
 
 @media (max-width: 768px) {
