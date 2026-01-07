@@ -29,6 +29,13 @@ const sortedBags = computed(() => {
   })
 })
 
+const sortedUsers = computed(() => {
+  return [...allUsers.value].sort((a, b) => {
+    if (a.admin === b.admin) return 0
+    return a.admin ? -1 : 1
+  })
+})
+
 const isExpanded = (bagId) => {
   return expandedBags.value.has(bagId)
 }
@@ -196,7 +203,17 @@ onMounted(async () => {
         </div>
         
         <div v-if="isExpanded(bag._id)" class="card-details">
-          <h4>Submission Details</h4>
+          <div class="details-header">
+            <h4>Submission Details</h4>
+            <a
+              class="bag-view-btn"
+              :href="`https://lays-flavor.vercel.app/preview.html?id=${bag._id}`"
+              target="_blank"
+              rel="noopener"
+            >
+              Bag View
+            </a>
+          </div>
           <div v-if="(bag.userId || bag.createdBy || bag.creator || bag.user) && users[bag.userId || bag.createdBy || bag.creator || bag.user]" class="user-info">
             <div class="info-row">
               <span class="label">Username:</span>
@@ -214,7 +231,7 @@ onMounted(async () => {
     </div>
     
     <div v-else-if="activeTab === 'users'" class="users-grid">
-      <div v-for="user in allUsers" :key="user._id" class="user-card">
+      <div v-for="user in sortedUsers" :key="user._id" class="user-card">
         <div class="user-main">
           <div class="user-info-main">
             <h3>{{ user.username }}</h3>
@@ -427,6 +444,13 @@ h1 {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
+.details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .card-details h4 {
   margin: 0 0 1rem 0;
   font-size: 14px;
@@ -434,6 +458,23 @@ h1 {
   color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.bag-view-btn {
+  padding: 8px 16px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.bag-view-btn:hover {
+  background: #f5f5f5;
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 .user-info {
